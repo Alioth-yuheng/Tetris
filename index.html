@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>俄罗斯方块</title>
+
+	<script src="lodash.min.js"></script>
+
+	<style type="text/css">
+		.container {
+			width: 200px;
+			height: 400px;
+			background-color: black;
+			position: relative; /*绝对定位*/
+		}
+
+		.moveBox {
+			width: 20px;
+			height: 20px;
+			background-color: white;
+			border: .3px solid grey;
+			box-sizing: border-box; /*CSS3:允许两个带边框div并排*/ /*https://www.w3school.com.cn/cssref/pr_box-sizing.asp*/
+			position: absolute; /*相对定位*/
+		}
+
+		/*固定到底部后的样式*/
+		.fixedBox {
+			width: 20px;
+			height: 20px;
+			background-color: grey;
+			border: .3px solid black;
+			box-sizing: border-box; /*CSS3:允许两个带边框div并排*/ /*https://www.w3school.com.cn/cssref/pr_box-sizing.asp*/
+			position: absolute; /*相对定位*/
+		}
+	</style>
+
+	<script>
+		// 定义常量		
+		//one step = 一步
+		var STEP = 20;
+		// 背景分割 
+		//20行，10列
+		var ROWCOUNT = 20,
+			COLCOUNT = 10;
+		//创建模型数据源
+		var MODELS = [
+			//第一个模型（L）
+			{
+				0: {
+					row: 2,
+					col: 0
+				},
+				1: {
+					row: 2,
+					col: 1
+				},
+				2: {
+					row: 2,
+					col: 2
+				},
+				3: {
+					row: 1,
+					col: 2
+				}
+			},
+			// 2.反L型
+			{
+				0: {
+					row: 2,
+					col: 0
+				},
+				1: {
+					row: 2,
+					col: 1
+				},
+				2: {
+					row: 2,
+					col: 2
+				},
+				3: {
+					row: 1,
+					col: 0
+				}
+			},
+			// 3.凸型
+			{
+				0: {
+					row: 1,
+					col: 1
+				},
+				1: {
+					row: 0,
+					col: 0
+				},
+				2: {
+					row: 1,
+					col: 0
+				},
+				3: {
+					row: 2,
+					col: 0
+				}
+			},
+			// 4.田型
+			{
+				0: {
+					row: 1,
+					col: 1
+				},
+				1: {
+					row: 2,
+					col: 1
+				},
+				2: {
+					row: 2,
+					col: 2
+				},
+				3: {
+					row: 1,
+					col: 2
+				}
+			},
+			// 5.一型
+			{
+				0: {
+					row: 0,
+					col: 0
+				},
+				1: {
+					row: 0,
+					col: 1
+				},
+				2: {
+					row: 0,
+					col: 2
+				},
+				3: {
+					row: 0,
+					col: 3
+				}
+			},
+			// 6.Z型
+			{
+				0: {
+					row: 1,
+					col: 1
+				},
+				1: {
+					row: 1,
+					col: 2
+				},
+				2: {
+					row: 2,
+					col: 2
+				},
+				3: {
+					row: 2,
+					col: 3
+				}
+			},
+			// 7.反Z型
+			{
+				0: {
+					row: 1,
+					col: 3
+				},
+				1: {
+					row: 1,
+					col: 2
+				},
+				2: {
+					row: 2,
+					col: 2
+				},
+				3: {
+					row: 2,
+					col: 1
+				}
+			}
+		]
+
+		// 定义变量
+		//当前使用模型
+		var nowModel = {}
+		//标记16宫格的位置
+		//current 当前
+		var currentX = 0,
+			currentY = 0;
+		// 记录所有块元素位置
+		// k=行_列		v=块元素
+		fixedBlocks = {}
+		// 定时器
+		var mInterval = null; 
+
+		//入口方法
+		function init() {
+			onkeydown();
+			createModel();
+		}
+
+		//根据模型数据源创建对应块元素 
+		//create 创建
+		function createModel() {
+			// 判断游戏是否结束
+			if (isGameOver()) {
+				gameOver();
+				return;
+			}
+
+			//确定当前使用模型
+			nowModel = MODELS[_.random(0, MODELS.length - 1)];
+			// 重新初始化16宫格模型位置
+			currentX = 0;
+			currentY = 0;
+			//生成对应数量的块元素
+			for (var key in nowModel) {
+				var divElement = document.createElement("div");
+				divElement.className = "moveBox";
+				document.getElementById("container").appendChild(divElement);
+			}	
+
+			//定位块元素位置 
+			locationBlocks();
+
+			// 模型自动下落
+			autoDown();
+		} 
+
+		// 根据模型数据源定位元素出现位置
+		// location 位置		block 块
+		function locationBlocks() { 
+			// 判断块元素越界行为
+			checkBound();
+			//获取所有块元素
+			var eles = document.getElementsByClassName("moveBox");
+	 		for (var i = 0; i < eles.length; i++) {
+				// 单个块元素 
+				var activityModelElement = eles[i];   
+				//找到每个块元素对应的数据
+				var blockModel = nowModel[i];
+				// 根据每个块元素对应数据指定块元素位置
+				//每个块元素由两个值确定：1、16宫格所在位置 2、块元素所在16宫格中的位置
+				activityModelElement.style.top = (currentY + blockModel.row) * STEP + "px";
+				activityModelElement.style.left = (currentX + blockModel.col) * STEP + "px";
+			}
+		}
+
+		// 监听键盘事件
+		function onkeydown() {
+			document.onkeydown = function (event) {
+				switch (event.keyCode) {
+					case 38:
+						console.log("上");
+						rotate();
+						break;
+
+					case 39:
+						console.log("右");
+						move(1,0);
+						break;
+
+					case 40:
+						console.log("下");
+						move(0,1);
+						break;
+
+					case 37:
+						console.log("左");
+						move(-1,0);
+						break;
+
+				}
+			}
+
+		}
+		
+		//移动
+		function move(x,y) {
+			//每次移动
+			//parseInt会解析内容并返回整数	https://www.w3school.com.cn/jsref/jsref_parseInt.asp
+
+			// var moveBoxModel = document.getElementsByClassName("moveBox")[0]
+			// moveBoxModel.style.top = parseInt(moveBoxModel.style.top || 0) + y * STEP + "px";
+			// moveBoxModel.style.left = parseInt(moveBoxModel.style.left || 0) + x * STEP + "px";
+
+			if (isMeet(currentX + x, currentY + y, nowModel)) {
+				//y轴底部触碰
+				if (y !== 0) {
+					fixedBottomModel();
+				}
+				return;
+			}
+
+			//16宫格移动
+			currentX += x;
+			currentY += y;
+			//根据16宫格重新定位块元素
+			locationBlocks();
+		 } 
+
+		 //旋转模型
+		 //rotate 旋转
+		 function rotate() {
+		 	//算法
+		 	//旋转后的行 = 旋转前的列
+		 	//旋转后的列 = 3 - 旋转前的行
+
+		 	// 克隆nowModel
+		 	var cloneNowModel = _.cloneDeep(nowModel);
+
+		 	for (var key in cloneNowModel) {
+		 		var blockModel = cloneNowModel[key];
+		 		//实现算法
+		 		var  temp = blockModel.row;
+		 		blockModel.row = blockModel.col;
+		 		blockModel.col = 3 - temp;
+		 	}
+
+		 	// 如果旋转之后会发生触碰，那么就不需要发生旋转
+		 	if (isMeet(currentX, currentY, cloneNowModel)) {
+		 		return;
+		 	}
+		 	// 接受这次旋转
+		 	nowModel = cloneNowModel;
+
+		 	locationBlocks();
+		 }
+
+		 //控制模型只能在容器内移动
+		 function checkBound() {
+		 	// 定义模型可以活动的范围
+		 	var leftBound = 0,
+		 		rightBound = COLCOUNT,
+		 		bottomBound = ROWCOUNT;
+		 		//16宫格越界时让16倒退一步
+		 		for (var key in nowModel) {
+		 			var blockModel = nowModel[key];
+		 			// 左侧越界
+		 			if ((blockModel.col + currentX) < leftBound) {
+		 				currentX++;
+		 			}
+		 			// 右侧越界
+		 			if  ((blockModel.col + currentX) >= rightBound) {
+		 				currentX--;
+		 			}
+		 			// 底部越界
+		 			if  ((blockModel.row + currentY) >= bottomBound) {
+		 				currentY--;
+		 				// 把模型固定在底部
+		 				fixedBottomModel();
+		 			}
+		 		}
+		 }
+
+		 //把模型固定在底部
+		 //fixed 固定
+		 function fixedBottomModel() {
+		 	var activityModelElements = document.getElementsByClassName("moveBox");
+		 	for (var i = activityModelElements.length - 1; i >= 0; i--) {
+		 		// 获取每个块元素
+		 		var activityModelElement = activityModelElements[i];
+		 		// 更改块元素类名
+		 		activityModelElement.className = "fixedBox";
+		 		// 把块元素放入到变量中
+		 		var blockModel = nowModel[i];
+		 		fixedBlocks[(currentY + blockModel.row) + "_" + (currentX + blockModel.col)] = activityModelElement;
+		 	}
+
+		 	// 判断一行是否被铺满
+		 	isRemoveLine();
+
+		 	// 创建新的模型
+		 	createModel();
+		 }
+
+		 // 判断模型之间触碰问题
+		 function isMeet(x,y,model) {
+		 	for (var k in model) {
+		 		var blockModel = model[k];
+		 		// 判断该位置是否已经存在块元素
+		 		if (fixedBlocks[(y + blockModel.row) + "_" + (x + blockModel.col)]) {
+		 			return true;
+		 		}
+		 	}
+		 	return false;
+		 }
+
+		 // 判断行是否被铺满
+		 function isRemoveLine() {
+		 	// 遍历所有行
+		 	for (var i = 0; i < ROWCOUNT; i++) {
+		 		// 标记，假设当前行已经铺满
+		 		var flag = true;
+		 		// 遍历所有列
+		 		for (var j = 0; j < COLCOUNT; j++) {
+		 			if (!fixedBlocks[i + "_" + j]) {
+		 				flag = false;
+		 				break;
+		 			}
+		 		}
+		 		if (flag) {
+		 			console.log("消行");
+		 			removeLine(i);
+		 		} 
+		 	}
+		 }
+
+		 // 消行
+		 function removeLine(line) {
+		 	for (var i = 0; i < COLCOUNT; i++) {
+		 		// 删除该行中所有块元素
+		 		document.getElementById("container").removeChild(fixedBlocks[line + "_" + i]);
+		 		// 删除该行中所有块元素的数据源
+		 		fixedBlocks[line + "_" + i] = null;
+		 	}
+		 	// 消行后下行
+		 	downLine(line);
+		 }
+
+
+		 function downLine(line) {
+		 	// 遍历被清理行上的所有列
+		 	for (var i = line - 1; i >= 0; i--) {
+		 		// 该行中的所有列
+		 		for (var j = 0; j < COLCOUNT; j++) {
+		 			// 如果不存在数据
+		 			if (!fixedBlocks[i + "_" + j]) continue;
+		 			// 如果存在数据
+		 			// 被清理行上所有块元素数据源所在行数 + 1
+		 			fixedBlocks[(i + 1) + "_" + j] = fixedBlocks[i + "_" + j];
+		 			// 让块元素在容器中的位置下落
+		 			fixedBlocks[(i + 1) + "_" + j].style.top = (i + 1) * STEP + "px";
+		 			// 清理之前的块元素
+		 			fixedBlocks[i + "_" + j] = null;
+		 		}
+		 	}
+		 }
+
+		 // 模型自动下落
+		 function autoDown() {
+		 	if (mInterval) {
+		 		clearInterval(mInterval);
+		 	}
+		 	mInterval = setInterval(function(){
+		 		move(0, 1)
+		 	},600)
+		 }
+
+		 // 判断游戏结束
+		 function isGameOver() {
+		 	// 第0行存在块素时游戏结束
+		 	for (var i = 0; i < COLCOUNT; i++) {
+		 		if (fixedBlocks["0_" + i]) {
+		 			return true;
+		 		}
+		 	}
+		 	return false;
+		 }
+
+		 // 结束掉游戏
+		 function gameOver() {
+		 	// 停止计时器
+		 	if (mInterval) {
+		 		clearInterval(mInterval);
+		 	}
+		 	alert("游戏结束！");
+		 }
+	</script>
+</head>
+<body onload="init()">
+	<!-- 背景容器 -->
+	<div class="container" id="container">
+		<!-- 可移动方块 -->
+	</div>
+
+</body>
+
+
+</html>
